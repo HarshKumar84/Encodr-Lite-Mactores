@@ -53,7 +53,78 @@ export const FAIL_URL = "https://cdn.example.com/videos/corrupt.mp4";
  * the failing URL), watch them fail, then make them pass.
  */
 export function computeRun(record: RunRecord, now: number = Date.now()): EncodeRun {
-  throw new Error("Not implemented: computeRun (see TODO above)");
+  const elapsed = Math.max(0, now - record.startedAt);
+
+  // If the record has the corrupt URL and has reached the failure mark, it fails mid-transcode.
+  if (record.sourceUrl === FAIL_URL && elapsed >= TIMELINE.failAtMs) {
+    const progressPct = Math.min(
+      100,
+      Math.max(0, Math.round((TIMELINE.failAtMs / TIMELINE.transcodingEndsMs) * 100)),
+    );
+    return {
+      id: record.id,
+      jobId: record.jobId,
+      stage: "FAILED",
+      progressPct,
+      message: "Transcoding failed: corrupt source media",
+      error: "The source video appears corrupt and cannot be transcoded.",
+    };
+  }
+
+  // QUEUED: 0ms <= elapsed < 2000ms
+  if (elapsed < TIMELINE.queuedEndsMs) {
+    const progressPct = Math.min(
+      100,
+      Math.max(0, Math.round((elapsed / TIMELINE.transcodingEndsMs) * 100)),
+    );
+    return {
+      id: record.id,
+      jobId: record.jobId,
+      stage: "QUEUED",
+      progressPct,
+      message: "Queued for encoding…",
+    };
+  }
+
+  // DOWNLOADING: 2000ms <= elapsed < 6000ms
+  if (elapsed < TIMELINE.downloadingEndsMs) {
+    const progressPct = Math.min(
+      100,
+      Math.max(0, Math.round((elapsed / TIMELINE.transcodingEndsMs) * 100)),
+    );
+    return {
+      id: record.id,
+      jobId: record.jobId,
+      stage: "DOWNLOADING",
+      progressPct,
+      message: "Downloading source media…",
+    };
+  }
+
+  // TRANSCODING: 6000ms <= elapsed < 12000ms
+  if (elapsed < TIMELINE.transcodingEndsMs) {
+    const progressPct = Math.min(
+      100,
+      Math.max(0, Math.round((elapsed / TIMELINE.transcodingEndsMs) * 100)),
+    );
+    return {
+      id: record.id,
+      jobId: record.jobId,
+      stage: "TRANSCODING",
+      progressPct,
+      message: "Transcoding renditions…",
+    };
+  }
+
+  // COMPLETED: elapsed >= 12000ms
+  return {
+    id: record.id,
+    jobId: record.jobId,
+    stage: "COMPLETED",
+    progressPct: 100,
+    message: "Encode completed successfully",
+    result: makeResult(),
+  };
 }
 
 // ---------------------------------------------------------------------------
