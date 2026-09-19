@@ -1,50 +1,35 @@
 "use client";
 
-import { use } from "react";
+import { use, useEffect, useState } from "react";
 import Link from "next/link";
-import { useJob } from "@/lib/client/hooks";
+import { useJob, useStartRun } from "@/lib/client/hooks";
+import { useRunPolling } from "@/lib/client/use-run-polling";
 import { StatusBadge } from "@/components/status-badge";
+import { ProgressBar } from "@/components/progress-bar";
 
-// The header (title, source URL, status badge, loading and not-found states) is provided.
-//
-// ---------------------------------------------------------------------------
-// TASK 5 — TODO(candidate): build the run panel where the placeholder is.
-// ---------------------------------------------------------------------------
-//
-// This is the most substantial screen in the exercise. Build it in this order:
-//
-//   1. A "Start encode" button that calls the provided useStartRun(job.id) mutation and keeps
-//      the returned `runId` in state. Disable it while a run is in flight.
-//
-//   2. Live progress, driven by your useRunPolling(runId) hook:
-//        - the current stage (<StatusBadge value={run.stage} />),
-//        - a percentage bar (<ProgressBar value={run.progressPct} />),
-//        - the log — the messages collected so far, newest last.
-//      A run takes about 12 seconds, so you'll see the whole thing without waiting long.
-//
-//   3. The FAILED case. Create a job with the source URL
-//        https://cdn.example.com/videos/corrupt.mp4
-//      and it will fail partway. Show the error message clearly (a red panel, `failed` on the
-//      progress bar) and offer a Retry that starts a fresh run.
-//
-//   4. The COMPLETED case. `run.result` arrives with the final poll: show the duration and a
-//      small table of renditions (label / resolution / size). Plain and readable beats fancy.
-//
-// A note on state: at any moment this screen is in exactly one of — idle, running, failed,
-// completed. Try to make that explicit in how you write it, rather than juggling several
-// booleans that could contradict each other (`isRunning && isFailed` should be impossible to
-// express, not merely unlikely). Say what you chose in the README.
-//
-// We are NOT grading visual design. Correct behaviour and readable code are what count.
 export default function JobDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
   const jobQuery = useJob(id);
+  const startRunMutation = useStartRun(id);
+
+  const job = jobQuery.data;
+  const [activeRunId, setActiveRunId] = useState<string | null>(job?.latestRunId ?? null);
+
+  useEffect(() => {
+    if (job?.latestRunId && !activeRunId) {
+      setActiveRunId(job.latestRunId);
+    }
+  }, [job?.latestRunId, activeRunId]);
+
+  const pollingState = useRunPolling(activeRunId, () => {
+    jobQuery.refetch();
+  });
 
   if (jobQuery.isLoading) {
     return <p className="text-sm text-neutral-500">Loading job…</p>;
   }
 
-  if (jobQuery.isError || !jobQuery.data) {
+  if (jobQuery.isError || !job) {
     return (
       <div className="text-sm text-red-600">
         Job not found.{" "}
@@ -55,7 +40,27 @@ export default function JobDetailPage({ params }: { params: Promise<{ id: string
     );
   }
 
-  const job = jobQuery.data;
+  const handleStartOrRetry = async () => {
+    try {
+      const res = await startRunMutation.mutateAsync();
+      setActiveRunId(res.runId);
+    } catch {
+      // Error available via startRunMutation.error
+    }
+  };
+
+  const run = pollingState.run;
+  const isStarting = startRunMutation.isPending;
+
+  // Explicit single state derivation: idle | starting | loading_run | running | failed | completed
+  const screenMode = (() => {
+    if (isStarting) return "starting" as const;
+    if (!activeRunId) return "idle" as const;
+    if (!run) return "loading_run" as const;
+    if (run.stage === "FAILED") return "failed" as const;
+    if (run.stage === "COMPLETED") return "completed" as const;
+    return "running" as const;
+  })();
 
   return (
     <div className="space-y-6">
@@ -71,10 +76,124 @@ export default function JobDetailPage({ params }: { params: Promise<{ id: string
         <StatusBadge value={job.status} />
       </div>
 
-      <p className="rounded-md border border-dashed border-neutral-300 p-4 text-sm text-neutral-500">
-        TODO(candidate): Start encode button, live progress, log, failure + retry, and the results
-        table.
-      </p>
+      {startRunMutation.error && (
+        <p className="text-sm text-red-600">{startRunMutation.error.message}</p>
+      )}
+
+      {pollingState.fetchError && (
+        <p className="text-sm text-amber-600">Network warning: {pollingState.fetchError}</p>
+      )}
+
+      <section className="rounded-md border border-neutral-200 p-5 space-y-4">
+        {screenMode === "idle" && (
+          <div className="space-y-3">
+            <p className="text-sm text-neutral-600">Ready to transcode. Click Start encode to begin.</p>
+            <button
+              onClick={handleStartOrRetry}
+              disabled={isStarting}
+              className="rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50"
+            >
+              Start encode
+            </button>
+          </div>
+        )}
+
+        {screenMode === "starting" && (
+          <div className="space-y-3">
+            <p className="text-sm text-neutral-500">Starting encode run…</p>
+            <button
+              disabled
+              className="rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white disabled:opacity-50"
+            >
+              Starting encode…
+            </button>
+          </div>
+        )}
+
+        {screenMode === "loading_run" && (
+          <p className="text-sm text-neutral-500">Connecting to encoder…</p>
+        )}
+
+        {(screenMode === "running" || screenMode === "completed" || screenMode === "failed") && run && (
+          <div className="space-y-5">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <span className="text-sm font-medium">Stage:</span>
+                <StatusBadge value={run.stage} />
+              </div>
+              <span className="text-sm font-medium text-neutral-600">
+                {run.progressPct}%
+              </span>
+            </div>
+
+            <ProgressBar value={run.progressPct} failed={screenMode === "failed"} />
+
+            {screenMode === "failed" && (
+              <div className="space-y-3 rounded-md border border-red-200 bg-red-50 p-4 text-sm text-red-800">
+                <p className="font-semibold">Encode failed</p>
+                <p className="text-xs text-red-700">{run.error || run.message}</p>
+                <div>
+                  <button
+                    onClick={handleStartOrRetry}
+                    disabled={isStarting}
+                    className="rounded-md bg-red-600 px-4 py-2 text-sm font-medium text-white hover:bg-red-700 disabled:opacity-50"
+                  >
+                    {isStarting ? "Starting…" : "Retry encode"}
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {screenMode === "completed" && run.result && (
+              <div className="space-y-3 rounded-md border border-neutral-200 p-4">
+                <div className="flex items-center justify-between border-b border-neutral-200 pb-2">
+                  <h3 className="text-sm font-semibold">Transcoded Renditions</h3>
+                  <span className="text-xs text-neutral-500">
+                    Duration: {run.result.durationSec}s
+                  </span>
+                </div>
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left text-xs">
+                    <thead className="border-b border-neutral-200 text-neutral-500">
+                      <tr>
+                        <th className="py-2 px-3">Rendition</th>
+                        <th className="py-2 px-3">Resolution</th>
+                        <th className="py-2 px-3">Size</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-neutral-100">
+                      {run.result.renditions.map((r, i) => (
+                        <tr key={i}>
+                          <td className="py-2 px-3 font-medium">{r.label}</td>
+                          <td className="py-2 px-3 text-neutral-600">
+                            {r.width} &times; {r.height}
+                          </td>
+                          <td className="py-2 px-3 text-neutral-600">{r.sizeMb} MB</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
+
+            {pollingState.log.length > 0 && (
+              <div className="space-y-2">
+                <p className="text-xs font-semibold uppercase tracking-wider text-neutral-500">
+                  Encode Log
+                </p>
+                <div className="space-y-1 rounded bg-neutral-900 p-3 font-mono text-xs text-neutral-100">
+                  {pollingState.log.map((msg, idx) => (
+                    <p key={idx} className="truncate">
+                      &gt; {msg}
+                    </p>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+      </section>
     </div>
   );
 }

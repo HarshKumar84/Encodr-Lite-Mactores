@@ -1,7 +1,8 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import type { EncodeRun } from "@/lib/types";
+import { useEffect, useRef, useState } from "react";
+import { isTerminalStage, type EncodeRun } from "@/lib/types";
+import { fetchRun } from "@/lib/client/hooks";
 
 export interface RunPollingState {
   /** The latest run state we've received, or null before the first response. */
@@ -66,11 +67,85 @@ const initialState: RunPollingState = {
  * isn't working — and this is exactly the bug we'll ask you about in the interview.
  */
 export function useRunPolling(runId: string | null, onFinished?: () => void): RunPollingState {
-  const [state] = useState<RunPollingState>(initialState);
+  const [state, setState] = useState<RunPollingState>(initialState);
+  const onFinishedRef = useRef(onFinished);
 
   useEffect(() => {
-    if (!runId) return;
-    // TODO(candidate): start polling here, and return a cleanup function.
+    onFinishedRef.current = onFinished;
+  }, [onFinished]);
+
+  useEffect(() => {
+    if (!runId) {
+      setState(initialState);
+      return;
+    }
+
+    let cancelled = false;
+    let stopped = false;
+    let timerId: ReturnType<typeof setInterval> | null = null;
+
+    setState({
+      run: null,
+      polling: true,
+      fetchError: null,
+      log: [],
+    });
+
+    async function poll() {
+      if (cancelled || stopped) return;
+      try {
+        const run = await fetchRun(runId!);
+        if (cancelled || stopped) return;
+
+        const terminal = isTerminalStage(run.stage);
+        if (terminal) {
+          stopped = true;
+          if (timerId !== null) {
+            clearInterval(timerId);
+            timerId = null;
+          }
+        }
+
+        setState((prev) => {
+          const newLog =
+            run.message && prev.log[prev.log.length - 1] !== run.message
+              ? [...prev.log, run.message]
+              : prev.log;
+
+          return {
+            run,
+            polling: !terminal,
+            fetchError: null,
+            log: newLog,
+          };
+        });
+
+        if (terminal) {
+          onFinishedRef.current?.();
+        }
+      } catch (err) {
+        if (cancelled || stopped) return;
+        setState((prev) => ({
+          ...prev,
+          fetchError: err instanceof Error ? err.message : "Failed to fetch run",
+        }));
+      }
+    }
+
+    poll();
+
+    if (!stopped) {
+      timerId = setInterval(poll, 1000);
+    }
+
+    return () => {
+      cancelled = true;
+      stopped = true;
+      if (timerId !== null) {
+        clearInterval(timerId);
+        timerId = null;
+      }
+    };
   }, [runId]);
 
   return state;
