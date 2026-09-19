@@ -79,7 +79,7 @@ If you're not sure where to start:
 
 ---
 
-## Candidate Write-Up
+
 
 ## Candidate Write-Up
 
