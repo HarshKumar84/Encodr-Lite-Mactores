@@ -81,242 +81,130 @@ If you're not sure where to start:
 
 
 
-## Candidate Write-Up
-
 ### 1. What I implemented
+I completed all six tasks in the Encodr Lite take-home assignment:
+- Added HTTP/HTTPS source URL validation using Zod.
+- Implemented the jobs `GET` and `POST` API routes with authentication and validation.
+- Implemented the run state machine in `computeRun()`, including the simulated failure case.
+- Built the create-job form using React Hook Form and Zod.
+- Added live run progress using polling and handled completed and failed runs.
+- Added retry support for failed runs starting a fresh independent run.
+- Added comprehensive tests for validation, API routes, state-machine boundaries, form behavior, and polling cleanup.
 
-I completed the six tasks in the Encodr Lite assignment.
-
-* Added HTTP/HTTPS source URL validation using Zod.
-* Implemented the jobs `GET` and `POST` API routes with authentication and validation.
-* Implemented the run state machine in `computeRun()`, including the simulated failure case.
-* Built the create-job form using React Hook Form and Zod.
-* Added live run progress using polling and handled completed and failed runs.
-* Added retry support for failed runs.
-* Added tests for the main validation, API, state-machine, form, and polling behavior.
-
-The encoding itself is simulated by the provided server-side run timeline. The application does not perform real media transcoding.
-
----
+*Note: Media transcoding is simulated by the provided server-side run timeline over 12 seconds. The application does not perform real ffmpeg media transcoding.*
 
 ### 2. Running the project
-
 The project requires Node 20+.
 
 Install dependencies:
-
 ```bash
 npm install
 ```
 
-Start the development server:
-
+Start the development server (runs at http://localhost:3000):
 ```bash
 npm run dev
 ```
 
-The application runs at:
-
-```text
-http://localhost:3000
-```
-
-Run the tests:
-
+Run automated tests:
 ```bash
 npm run test:run
 ```
 
-Run the TypeScript check:
-
+Run TypeScript check:
 ```bash
 npm run typecheck
 ```
 
-Create a production build:
-
+Create production build:
 ```bash
 npm run build
 ```
 
-#### Demo login
-
-```text
-Email: demo@encodr.dev
-Password: password123
-```
-
----
+**Demo login:**
+- Email: `demo@encodr.dev`
+- Password: `password123`
 
 ### 3. What is working
-
-* [x] Login and authenticated routes
-* [x] Create a job from a source URL
-* [x] Optional job title
-* [x] Client-side validation
-* [x] Server-side validation with field errors
-* [x] Job list and job detail pages
-* [x] Start an encoding run
-* [x] Live progress updates
-* [x] Completed run and rendition display
-* [x] Failed run handling
-* [x] Retry after failure
-* [x] Polling cleanup when the run finishes or the page changes
-* [x] Automated tests
-
----
+- [x] Login and authenticated route guards
+- [x] Create a job from a source URL
+- [x] Optional job title support
+- [x] Client-side validation with instant inline errors
+- [x] Server-side validation returning 422 field errors
+- [x] Job list and job detail pages
+- [x] Start an encoding run
+- [x] Live progress updates (~1s interval)
+- [x] Completed run and renditions table display
+- [x] Failed run handling with clear server error panel
+- [x] Retry functionality launching a fresh run
+- [x] Polling cleanup when the run finishes, page changes, or component unmounts
+- [x] Automated tests (38 tests passing across 5 suites)
 
 ### 4. Decisions and assumptions
-
-#### Source URL validation
-
-I used `new URL()` together with Zod refinements to validate the source URL.
-
-The URL must use either HTTP or HTTPS and must contain a meaningful path. I did not restrict the URL to specific extensions such as `.mp4` or `.mov`, since the requirement is for a media URL with a path rather than a fixed list of file extensions.
-
-#### Run state
-
-I kept the run calculation on the server in `computeRun()`.
-
-The current stage and progress are calculated from the elapsed time of the run. The client only requests the current run state and displays it; it does not duplicate the timing logic.
-
-#### Polling
-
-The detail page starts with an immediate request and then polls approximately once per second.
-
-Polling stops when the run reaches `COMPLETED` or `FAILED`.
-
-I also made sure the interval is cleaned up when the component unmounts or when the active run changes. This was important because an old request should not update the UI after the user has moved away from that run.
-
-#### Storage
-
-I kept the provided in-memory Maps for jobs and runs. I did not add a database because persistent storage is outside the scope of this assignment.
-
----
+- **Source URL validation**: 
+Used `new URL()` with Zod refinements. The URL must use `http:` or `https:` and contain a non-empty file path (stripping trailing slashes to reject origin-only URLs like `https://cdn.example.com`). I did not restrict to specific extensions like `.mp4` or `.mov` since the requirement is for a generic media URL with a path.
+- **Run state**:
+ Kept the run calculation exclusively on the server in `computeRun()`. Current stage and progress are pure functions of elapsed time. The client only polls and displays state; it never duplicates timing logic.
+- **Detail page state modeling**: 
+Modeled the screen with an explicit single-state union (`idle | starting | running | failed | completed`) rather than multiple independent booleans, making invalid combinations like `isRunning && isFailed` impossible.
+- **Polling & cleanup**: 
+The detail page fires an immediate request and then polls every 1,000ms until reaching a terminal stage (`COMPLETED` or `FAILED`). Cleanup clears the interval and uses a cancellation guard to prevent in-flight promises from updating state after unmounting.
+- **Storage**: Kept the provided in-memory Maps in `lib/server/store.ts`. No database was added as persistent storage is explicitly out of scope.
 
 ### 5. What was hardest
-
-The part I found most interesting was getting the run boundaries correct.
-
-For example, the state changes exactly at:
-
-```text
-2000ms  → DOWNLOADING
-6000ms  → TRANSCODING
-8000ms  → FAILED for the corrupt URL
-12000ms → COMPLETED
-```
-
-I wrote tests around those boundaries because a small `<` versus `<=` mistake could change the displayed stage.
-
-The other challenging part was polling cleanup. Clearing an interval stops future polling, but an HTTP request that has already started can still finish later. I therefore had to make sure those stale responses could not update the component after it was unmounted or the run had changed.
-
-I also had to handle server-side validation errors in the create-job form and map those errors back to the correct form fields.
-
----
+- **Exact timeline boundary handling in `computeRun()`**: 
+The state changes at exact millisecond marks (`2000ms` for DOWNLOADING, `6000ms` for TRANSCODING, `8000ms` for corrupt URL failure, and `12000ms` for COMPLETED). I wrote tests for `1999ms`, `2000ms`, `5999ms`, `6000ms`, etc., before coding to ensure no `<` vs `<=` edge errors existed.
+- **Asynchronous polling cleanup**: 
+Clearing an interval stops future ticks, but an HTTP request already in flight can still resolve after navigating away. I implemented a cancellation guard flag alongside `clearInterval` to prevent unmounted state updates.
+- **Testing React 19 async route params in jsdom**: 
+In Next.js 16 / React 19, `params` is a Promise unwrapped via `use(params)`. In the component tests, this suspended rendering; wrapping tests in `<Suspense>` and awaiting an asynchronous `act()` ensured promises resolved cleanly before assertions ran.
+- **Mapping server-side 422 errors**: 
+Catching `ApiError` in the form's `handleSubmit` and translating `fieldErrors` records into React Hook Form `setError` calls while maintaining a fallback for generic errors.
 
 ### 6. Testing
+Tests are in `__tests__/` using Vitest and React Testing Library:
+- `computeRun()` at exact timeline boundaries (0ms, 1999ms, 2000ms, 5999ms, 6000ms, 7999ms, 8000ms, 11999ms, 12000ms).
+- Corrupt source failure at 8 seconds (verifying frozen progress at 67%, error message, and undefined result).
+- Progress monotonicity across the 12-second timeline.
+- HTTP/HTTPS source URL validation (accepting valid URLs, rejecting empty, malformed, non-HTTP, and pathless URLs).
+- Jobs API routes (401 unauthenticated, 200 list, 422 validation, 201 creation).
+- Create-job form validation (preventing API calls on bad input, submitting valid data, mapping 422 field errors).
+- Polling hook lifecycle (immediate fetch, intervals, stopping on terminal states, unmount cleanup).
 
-I added tests under `__tests__/` using Vitest and React Testing Library.
-
-The main areas covered are:
-
-* `computeRun()` at the important timeline boundaries
-* the corrupt-source failure at 8 seconds
-* HTTP/HTTPS source URL validation
-* invalid job creation requests
-* successful job creation
-* create-job form validation
-* mapping server `422` errors to form fields
-* polling at one-second intervals
-* stopping polling after completion/failure
-* polling cleanup on unmount
-
-The final test run was:
-
+**Final test result:**
 ```text
 Test Files  5 passed (5)
 Tests       38 passed (38)
 ```
-
-I also removed the original `example.test.ts` starter test after replacing it with the actual assignment tests.
-
----
+The starter `example.test.ts` file was removed after the full suite was completed.
 
 ### 7. Verification
-
-I verified the project with:
-
-```bash
-npm run test:run
-```
-
-Result:
-
-```text
-5 test files passed
-38 tests passed
-```
-
-TypeScript check:
-
-```bash
-npm run typecheck
-```
-
-Result:
-
-```text
-Passed with 0 errors
-```
-
-Production build:
-
-```bash
-npm run build
-```
-
-Result:
-
-```text
-Build succeeded
-```
-
----
+- `npm run test:run` → 5 test files passed, 38 tests passed.
+- `npm run typecheck` → Passed with 0 errors (`tsc --noEmit`).
+- `npm run build` → Production build succeeded with Next.js 16.
 
 ### 8. Failure path
-
-The application also handles the simulated corrupt-source case.
-
-Using the assignment's failure URL, the flow is:
-
-```text
-Start encode
-    ↓
-QUEUED
-    ↓
-DOWNLOADING
-    ↓
-TRANSCODING
-    ↓
-FAILED
-```
-
-At the failure point, the error returned by the server is displayed and polling stops.
-
-The user can then click **Retry**, which creates a new run and starts polling that run instead of reusing the failed run.
-
----
+To reproduce the failure path:
+1. Create a job using the assignment's corrupt URL:
+   ```text
+   https://cdn.example.com/videos/corrupt.mp4
+   ```
+2. Open the job detail page and click **Start encode**.
+3. Watch the progress move through `QUEUED` → `DOWNLOADING` → `TRANSCODING`.
+4. At exactly 8 seconds, the stage transitions to `FAILED`:
+   - Progress bar turns red and freezes at 67%.
+   - Server error message is displayed: *"The source video appears corrupt and cannot be transcoded."*
+   - Polling stops immediately.
+5. Click **Retry encode** to initiate a new run with a fresh run ID that is polled independently.
 
 ### 9. What I would improve next
+If extending this application beyond the assignment scope, I would:
+- Replace the in-memory store with PostgreSQL and an ORM (Prisma or Drizzle) for data persistence across server restarts.
+- Move transcoding to an asynchronous worker queue (e.g., BullMQ / Redis or AWS SQS + MediaConvert).
+- Use WebSockets or Server-Sent Events (SSE) instead of HTTP polling to reduce request volume.
+- Implement tab visibility pausing (`document.visibilityState`) to pause polling while the browser tab is hidden.
+- Add relative timestamps ("created 5 minutes ago") and conduct an accessibility audit for screen readers.
 
-If this were being taken beyond the scope of the assignment, I would consider:
+### 10. Time spent
+- Approximately 5 hours across implementation, testing, and the final write-up.
 
-* replacing the in-memory store with PostgreSQL
-* moving real transcoding to a background worker/queue
-* using WebSockets or Server-Sent Events instead of polling
-* adding persistent job history
-* improving accessibility and status announcements
-* handling browser tab visibility so polling can be reduced while the page is inactive
-
-These were intentionally left out because they are outside the scope of the take-home assignment.
