@@ -79,31 +79,244 @@ If you're not sure where to start:
 
 ---
 
-# Your write-up
+## Candidate Write-Up
 
-Please replace this section before submitting. See `BRIEF.md` §6 for what we're after.
+## Candidate Write-Up
 
-### What's working
+### 1. What I implemented
 
-<!-- Which of the six tasks are done? Anything half-finished or knowingly broken? -->
+I completed the six tasks in the Encodr Lite assignment.
 
-### How to see the failure path
+* Added HTTP/HTTPS source URL validation using Zod.
+* Implemented the jobs `GET` and `POST` API routes with authentication and validation.
+* Implemented the run state machine in `computeRun()`, including the simulated failure case.
+* Built the create-job form using React Hook Form and Zod.
+* Added live run progress using polling and handled completed and failed runs.
+* Added retry support for failed runs.
+* Added tests for the main validation, API, state-machine, form, and polling behavior.
 
-<!-- Which URL, which screen. -->
+The encoding itself is simulated by the provided server-side run timeline. The application does not perform real media transcoding.
 
-### Decisions and assumptions
+---
 
-<!-- How did you model the detail page's state? How does your polling clean up? Anything the brief
-     left ambiguous, and what you assumed. -->
+### 2. Running the project
 
-### What was hardest
+The project requires Node 20+.
 
-<!-- Be honest here — we read this part closely. What confused you, and how did you work it out? -->
+Install dependencies:
 
-### What I'd do next
+```bash
+npm install
+```
 
-<!-- With another day. -->
+Start the development server:
 
-### Time spent
+```bash
+npm run dev
+```
 
-<!-- Roughly. There's no wrong answer; it helps us calibrate the exercise. -->
+The application runs at:
+
+```text
+http://localhost:3000
+```
+
+Run the tests:
+
+```bash
+npm run test:run
+```
+
+Run the TypeScript check:
+
+```bash
+npm run typecheck
+```
+
+Create a production build:
+
+```bash
+npm run build
+```
+
+#### Demo login
+
+```text
+Email: demo@encodr.dev
+Password: password123
+```
+
+---
+
+### 3. What is working
+
+* [x] Login and authenticated routes
+* [x] Create a job from a source URL
+* [x] Optional job title
+* [x] Client-side validation
+* [x] Server-side validation with field errors
+* [x] Job list and job detail pages
+* [x] Start an encoding run
+* [x] Live progress updates
+* [x] Completed run and rendition display
+* [x] Failed run handling
+* [x] Retry after failure
+* [x] Polling cleanup when the run finishes or the page changes
+* [x] Automated tests
+
+---
+
+### 4. Decisions and assumptions
+
+#### Source URL validation
+
+I used `new URL()` together with Zod refinements to validate the source URL.
+
+The URL must use either HTTP or HTTPS and must contain a meaningful path. I did not restrict the URL to specific extensions such as `.mp4` or `.mov`, since the requirement is for a media URL with a path rather than a fixed list of file extensions.
+
+#### Run state
+
+I kept the run calculation on the server in `computeRun()`.
+
+The current stage and progress are calculated from the elapsed time of the run. The client only requests the current run state and displays it; it does not duplicate the timing logic.
+
+#### Polling
+
+The detail page starts with an immediate request and then polls approximately once per second.
+
+Polling stops when the run reaches `COMPLETED` or `FAILED`.
+
+I also made sure the interval is cleaned up when the component unmounts or when the active run changes. This was important because an old request should not update the UI after the user has moved away from that run.
+
+#### Storage
+
+I kept the provided in-memory Maps for jobs and runs. I did not add a database because persistent storage is outside the scope of this assignment.
+
+---
+
+### 5. What was hardest
+
+The part I found most interesting was getting the run boundaries correct.
+
+For example, the state changes exactly at:
+
+```text
+2000ms  → DOWNLOADING
+6000ms  → TRANSCODING
+8000ms  → FAILED for the corrupt URL
+12000ms → COMPLETED
+```
+
+I wrote tests around those boundaries because a small `<` versus `<=` mistake could change the displayed stage.
+
+The other challenging part was polling cleanup. Clearing an interval stops future polling, but an HTTP request that has already started can still finish later. I therefore had to make sure those stale responses could not update the component after it was unmounted or the run had changed.
+
+I also had to handle server-side validation errors in the create-job form and map those errors back to the correct form fields.
+
+---
+
+### 6. Testing
+
+I added tests under `__tests__/` using Vitest and React Testing Library.
+
+The main areas covered are:
+
+* `computeRun()` at the important timeline boundaries
+* the corrupt-source failure at 8 seconds
+* HTTP/HTTPS source URL validation
+* invalid job creation requests
+* successful job creation
+* create-job form validation
+* mapping server `422` errors to form fields
+* polling at one-second intervals
+* stopping polling after completion/failure
+* polling cleanup on unmount
+
+The final test run was:
+
+```text
+Test Files  5 passed (5)
+Tests       38 passed (38)
+```
+
+I also removed the original `example.test.ts` starter test after replacing it with the actual assignment tests.
+
+---
+
+### 7. Verification
+
+I verified the project with:
+
+```bash
+npm run test:run
+```
+
+Result:
+
+```text
+5 test files passed
+38 tests passed
+```
+
+TypeScript check:
+
+```bash
+npm run typecheck
+```
+
+Result:
+
+```text
+Passed with 0 errors
+```
+
+Production build:
+
+```bash
+npm run build
+```
+
+Result:
+
+```text
+Build succeeded
+```
+
+---
+
+### 8. Failure path
+
+The application also handles the simulated corrupt-source case.
+
+Using the assignment's failure URL, the flow is:
+
+```text
+Start encode
+    ↓
+QUEUED
+    ↓
+DOWNLOADING
+    ↓
+TRANSCODING
+    ↓
+FAILED
+```
+
+At the failure point, the error returned by the server is displayed and polling stops.
+
+The user can then click **Retry**, which creates a new run and starts polling that run instead of reusing the failed run.
+
+---
+
+### 9. What I would improve next
+
+If this were being taken beyond the scope of the assignment, I would consider:
+
+* replacing the in-memory store with PostgreSQL
+* moving real transcoding to a background worker/queue
+* using WebSockets or Server-Sent Events instead of polling
+* adding persistent job history
+* improving accessibility and status announcements
+* handling browser tab visibility so polling can be reduced while the page is inactive
+
+These were intentionally left out because they are outside the scope of the take-home assignment.
