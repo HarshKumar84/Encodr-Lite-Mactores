@@ -91,7 +91,7 @@ I completed all six tasks in the Encodr Lite take-home assignment:
 - Added retry support for failed runs starting a fresh independent run.
 - Added comprehensive tests for validation, API routes, state-machine boundaries, form behavior, and polling cleanup.
 
-*Note: Media transcoding is simulated by the provided server-side run timeline over 12 seconds. The application does not perform real ffmpeg media transcoding.*
+
 
 ### 2. Running the project
 The project requires Node 20+.
