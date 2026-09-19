@@ -79,7 +79,7 @@ If you're not sure where to start:
 
 ---
 
-
+# Your write-up
 
 ### 1. What I implemented
 I completed all six tasks in the Encodr Lite take-home assignment:
