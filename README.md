@@ -190,6 +190,9 @@ The starter `example.test.ts` file was removed after the full suite was complete
 - `npm run typecheck` → Passed with 0 errors (`tsc --noEmit`).
 - `npm run build` → Production build succeeded with Next.js 16.
 
+**Terminal Verification Output:**
+![Terminal Verification](docs/screenshots/04-terminal-verification.png)
+
 ### 8. Failure path
 To reproduce the failure path:
 1. Create a job using the assignment's corrupt URL:
