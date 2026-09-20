@@ -140,15 +140,22 @@ npm run build
 - [x] Polling cleanup when the run finishes, page changes, or component unmounts
 - [x] Automated tests (38 tests passing across 5 suites)
 
+#### UI Screenshots
+
+**1. Jobs Dashboard & Create Job Form (`/jobs`):**
+![Jobs Dashboard and Create Form](docs/screenshots/01-jobs-list-and-create-form.png)
+
+**2. Completed Encode Run with Renditions Table (`/jobs/[id]`):**
+![Completed Encode Run](docs/screenshots/02-completed-encode-run.png)
+
+**3. Simulated Failure State & Retry Button (`/jobs/[id]`):**
+![Failed Encode Run and Retry](docs/screenshots/03-failure-and-retry.png)
+
 ### 4. Decisions and assumptions
-- **Source URL validation**: 
-Used `new URL()` with Zod refinements. The URL must use `http:` or `https:` and contain a non-empty file path (stripping trailing slashes to reject origin-only URLs like `https://cdn.example.com`). I did not restrict to specific extensions like `.mp4` or `.mov` since the requirement is for a generic media URL with a path.
-- **Run state**:
- Kept the run calculation exclusively on the server in `computeRun()`. Current stage and progress are pure functions of elapsed time. The client only polls and displays state; it never duplicates timing logic.
-- **Detail page state modeling**: 
-Modeled the screen with an explicit single-state union (`idle | starting | running | failed | completed`) rather than multiple independent booleans, making invalid combinations like `isRunning && isFailed` impossible.
-- **Polling & cleanup**: 
-The detail page fires an immediate request and then polls every 1,000ms until reaching a terminal stage (`COMPLETED` or `FAILED`). Cleanup clears the interval and uses a cancellation guard to prevent in-flight promises from updating state after unmounting.
+- **Source URL validation**: Used `new URL()` with Zod refinements. The URL must use `http:` or `https:` and contain a non-empty file path (stripping trailing slashes to reject origin-only URLs like `https://cdn.example.com`). I did not restrict to specific extensions like `.mp4` or `.mov` since the requirement is for a generic media URL with a path.
+- **Run state**: Kept the run calculation exclusively on the server in `computeRun()`. Current stage and progress are pure functions of elapsed time. The client only polls and displays state; it never duplicates timing logic.
+- **Detail page state modeling**: Modeled the screen with an explicit single-state union (`idle | starting | running | failed | completed`) rather than multiple independent booleans, making invalid combinations like `isRunning && isFailed` impossible.
+- **Polling & cleanup**: The detail page fires an immediate request and then polls every 1,000ms until reaching a terminal stage (`COMPLETED` or `FAILED`). Cleanup clears the interval and uses a cancellation guard to prevent in-flight promises from updating state after unmounting.
 - **Storage**: Kept the provided in-memory Maps in `lib/server/store.ts`. No database was added as persistent storage is explicitly out of scope.
 
 ### 5. What was hardest
